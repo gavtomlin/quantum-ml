@@ -1,0 +1,31 @@
+[project]
+name = "quantum-ai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+	"numpy>=1.26",
+	"scikit-learn>=1.5",
+	"xgboost>=2.0",
+	"matplotlib>=3.8",
+	"seaborn>=0.13",
+	"pydantic>=2.7",
+	"pennylane>=0.36",
+	"pyyaml>=6.0.3",
+	"polars>=1.42.0",
+	"plotly>=6.8.0",
+	"pennylane-lightning>=0.45.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-cov"]
+
+[project.scripts]
+quantum-ai = "quantum_ai.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+package = true

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+
+# Build / packaging
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# uv
+.python-version
+
+# Outputs (generated at runtime)
+outputs/
+
+# macOS
+.DS_Store

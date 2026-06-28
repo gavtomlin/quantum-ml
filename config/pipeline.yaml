@@ -1,0 +1,21 @@
+data:
+  path: src/data/customer-churn.csv
+  output_dir: outputs
+
+split:
+  test_size: 0.2
+  random_state: 10
+
+classical:
+  max_iter: 1000        #Log Regression
+  n_estimators: 100     #Random Forest
+  random_state: 10
+
+quantum:
+  n_qubits: 12
+  n_layers: 6
+  encoding: angle       # angle | amplitude
+  n_steps: 100           # optimisation steps
+  step_size: 0.5        # learning rate for gradient
+  max_train_samples: 600
+  optimizer: adam
