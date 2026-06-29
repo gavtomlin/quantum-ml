@@ -23,7 +23,9 @@ from classical.random_forest import RandomForestChurnModel
 from classical.xgboost_model import XGBoostChurnModel
 from classical.mlp import MLPChurnModel
 from classical.ensemble import EnsembleChurnModel
+from classical.tabicl import TabICLChurnModel
 from quantum.vqc import VQCChurnModel
+from quantum.svm import QuantumSVMModel
 from sklearn.model_selection import train_test_split
 
 
@@ -31,12 +33,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-qo', '--quantum-only', action='store_true',
                         help='Skip classical models, load saved feature indices')
+    parser.add_argument('-co', '--classical-only', action='store_true',
+                        help='Skip quantum model, run classical models only')
     args = parser.parse_args()
 
     config = load_config("config/pipeline.yaml")
 
     df = load_raw(config.data.path)
-    run_eda(df) 
+    if not args.classical_only:
+        run_eda(df)
     X, y = CleaningPipeline(config).fit_transform(df)
 
     X_np = X.to_numpy()
@@ -60,6 +65,7 @@ def main():
         print(f"Loaded top features: {top_features}")
     else:
         classical_models = [
+                TabICLChurnModel(config),
                 LogisticChurnModel(config),
                 RandomForestChurnModel(config),
                 XGBoostChurnModel(config),
@@ -70,7 +76,9 @@ def main():
         importances = []
 
         for model in classical_models:
+            print(f"\nfitting {model.name}...")
             model.fit(X_train, y_train)
+            print(f"predicting {model.name}...")
             y_pred = model.predict(X_test)
             y_score = model.predict_proba(X_test)[:, 1]
             results = model.evaluate(X_test, y_test)
@@ -100,26 +108,26 @@ def main():
         with open(TOP_FEATURES_PATH, 'w') as f:
             json.dump({'indices': top_indices.tolist(), 'features': top_features}, f)
 
-    X_train_q = X_train[:, top_indices]
-    X_test_q = X_test[:, top_indices]
+    if not args.classical_only:
+        X_train_q = X_train[:, top_indices]
+        X_test_q = X_test[:, top_indices]
 
-    # train VQCChurnModel
-    vqc = VQCChurnModel(config)
-    vqc.fit(X_train_q, y_train)
-    y_pred_q = vqc.predict(X_test_q)
-    y_score_q = vqc.predict_proba(X_test_q)[:, 1]
-    results_q = vqc.evaluate(X_test_q, y_test)
-    eval_results[vqc.name] = {
-            'y_true': y_test, 
-            'y_score': y_score_q,
-            'accuracy': results_q['accuracy'],
-            'roc_auc': results_q['roc_auc'],
-        }
-    print(f"\n{vqc.name}")
-    print(f"  Accuracy: {results_q['accuracy']:.4f}")
-    print(f"  ROC-AUC:  {results_q['roc_auc']:.4f}")
-    print(results_q['report'])
-    plot_confusion_matrix(y_test, y_pred_q, vqc.name)
+        for qmodel in [VQCChurnModel(config), QuantumSVMModel(config)]:
+            qmodel.fit(X_train_q, y_train)
+            y_pred_qm = qmodel.predict(X_test_q)
+            y_score_qm = qmodel.predict_proba(X_test_q)[:, 1]
+            results_qm = qmodel.evaluate(X_test_q, y_test)
+            eval_results[qmodel.name] = {
+                'y_true': y_test,
+                'y_score': y_score_qm,
+                'accuracy': results_qm['accuracy'],
+                'roc_auc': results_qm['roc_auc'],
+            }
+            print(f"\n{qmodel.name}")
+            print(f"  Accuracy: {results_qm['accuracy']:.4f}")
+            print(f"  ROC-AUC:  {results_qm['roc_auc']:.4f}")
+            print(results_qm['report'])
+            plot_confusion_matrix(y_test, y_pred_qm, qmodel.name)
    
 
     plot_roc_curve(eval_results)

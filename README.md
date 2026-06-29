@@ -37,6 +37,9 @@ uv run python src/main.py
 
 # Quantum only — skip classical models, reuse saved feature indices
 uv run python src/main.py -qo
+
+# Classical only — skip quantum models
+uv run python src/main.py -co
 ```
 
 All plots saved to `outputs/` as interactive HTML files.
@@ -71,6 +74,7 @@ quantum:
   step_size: 0.5
   max_train_samples: 600
   optimizer: adam       # adam | gradient_descent | adagrad | momentum
+  max_kernel_samples: 200  # quantum SVM kernel matrix is O(n²) circuits
 ```
 
 ---
@@ -92,10 +96,13 @@ src/
     random_forest.py    # Random Forest
     xgboost_model.py    # XGBoost
     mlp.py              # MLP (Neural Network)
-    ensemble.py         # Soft-voting ensemble of all three
+    ensemble.py         # Soft-voting ensemble of all classical models
+    tabicl.py           # TabICL (Tabular In-Context Learning)
   quantum/
     encoding.py         # Angle and amplitude encoding layers (PennyLane)
     vqc.py              # Variational Quantum Classifier
+    kernel.py           # Quantum kernel circuit
+    svm.py              # Quantum Kernel SVM
   viz/
     eda.py              # EDA plots (Plotly)
     evaluation.py       # Model evaluation plots (ROC, PR, confusion matrix)
@@ -136,9 +143,10 @@ Class imbalance is handled per-model:
 - **Random Forest** — `class_weight='balanced'`
 - **XGBoost** — `scale_pos_weight = n_negative / n_positive` computed at fit time
 - **MLP** — decision threshold adjusted to class prior (`n_churners / n_total`) rather than default 0.5
-- **Ensemble** — soft-voting across Logistic, RF, XGBoost
+- **Ensemble** — soft-voting across all classical models
+- **TabICL** — pre-trained transformer for tabular in-context learning; no fine-tuning, passes training data as context at inference time. Trained on 200 samples (CPU only — MPS deadlocks due to internal PyTorch multiprocessing conflict)
 
-### Quantum (VQC)
+### Quantum
 
 Built with [PennyLane](https://pennylane.ai/) using the `lightning.qubit` simulator.
 
@@ -156,24 +164,41 @@ Built with [PennyLane](https://pennylane.ai/) using the `lightning.qubit` simula
 
 **Amplitude encoding** is also implemented — pads features to 2^n_qubits with zeros and L2-normalises. Switch via `encoding: amplitude` in config.
 
+### Quantum Kernel SVM
+
+An alternative quantum approach using the quantum kernel as a similarity function for a classical SVM, rather than training a variational circuit.
+
+**How it works:**
+1. For every pair of training points `(x_i, x_j)`, run both through the angle encoding circuit and compute their state overlap: `K(x_i, x_j) = |⟨φ(x_j)|φ(x_i)⟩|²`
+2. This produces a precomputed `n×n` kernel matrix
+3. sklearn's `SVC(kernel='precomputed')` uses this matrix to find the optimal hyperplane
+
+The SVM itself has no quantum components — the quantum part is entirely in computing the similarity scores. The kernel matrix computation requires O(n²) circuit evaluations, making it expensive on a simulator (200 training samples = 40,000 circuits for training, 281,800 for test inference).
+
 ---
 
 ## Results
 
-Classical models trained on all 23 features, full training set (~5600 samples). VQC trained on top 12 features (selected by averaged classical feature importance), 600 samples, 12 qubits, 6 layers, Adam optimiser, class-weighted cost function.
+All models evaluated on the same 20% held-out test set (1409 samples). Classical models trained on all 23 features (~5634 training samples). Quantum models trained on top 12 features selected by averaged classical feature importance.
 
-| Model | Accuracy | ROC-AUC | Churn Recall |
-|-------|----------|---------|--------------|
-| Logistic Regression | 0.736 | 0.843 | 0.78 |
-| Random Forest | 0.787 | 0.834 | 0.68 |
-| XGBoost | 0.765 | 0.832 | 0.66 |
-| MLP | 0.802 | 0.841 | 0.54 |
-| Ensemble | 0.793 | 0.846 | 0.68 |
-| VQC (quantum) | 0.574 | 0.639 | 0.63 |
+| Model | Accuracy | ROC-AUC | Churn Recall | Training data |
+|-------|----------|---------|--------------|---------------|
+| TabICL | 0.798 | 0.828 | 0.53 | 200 samples, 23 features |
+| Logistic Regression | 0.736 | 0.843 | 0.78 | ~5634 samples, 23 features |
+| Random Forest | 0.787 | 0.834 | 0.68 | ~5634 samples, 23 features |
+| XGBoost | 0.765 | 0.832 | 0.66 | ~5634 samples, 23 features |
+| MLP | 0.745 | 0.841 | 0.75 | ~5634 samples, 23 features |
+| Ensemble | 0.793 | 0.846 | 0.68 | ~5634 samples, 23 features |
+| VQC | 0.632 | 0.730 | 0.75 | 600 samples, 12 features |
+| Quantum Kernel SVM | 0.764 | 0.699 | 0.46 | 200 samples, 12 features |
 
-The VQC gap is expected, not a failure. Classical models have a 9x data advantage, access to all 23 features, and hundreds of parameters vs 72 for the VQC. The ROC-AUC of 0.64 — well above random — shows the circuit is learning a genuine signal. The churn recall of 0.63, on par with RF and XGBoost, is a direct result of the class-weighted cost function.
+**Key observations:**
 
-The cost function converged from 0.94 → 0.83 over 100 steps before plateauing, indicating the circuit hit its expressibility limit rather than an optimisation failure. Quantum advantage on classical tabular data does not exist at this scale or on a simulator.
+- **TabICL** achieves 0.828 ROC-AUC on only 200 training samples — the strongest accuracy of any model and close to the best ROC-AUC. This demonstrates the power of pre-trained meta-learning on tabular data: it has learned a general prior over tabular classification tasks that transfers directly without fine-tuning.
+- **Ensemble** achieves the best ROC-AUC (0.846) by combining the diverse decision boundaries of all classical models.
+- **VQC** improved significantly over the previous run — ROC-AUC 0.730 (up from 0.639) and churn recall 0.75, competitive with the best classical models. The class-weighted cost function is working.
+- **Quantum Kernel SVM** achieves respectable accuracy (0.764) but lower ROC-AUC (0.699) than the VQC. The kernel approach captures a different similarity structure in Hilbert space but is heavily constrained by the 200-sample kernel matrix limit. The test kernel matrix (1409×200 = 281,800 circuit evaluations) ran in ~19 minutes.
+- Quantum advantage on classical tabular data does not exist at this scale or on a simulator. The interesting result is how well both quantum methods perform given their severe data constraints relative to classical models.
 
 ---
 

@@ -9,8 +9,9 @@ class XGBoostChurnModel(BaseChurnModel):
     def __init__(self, config: PipelineConfig):
         self._model = XGBClassifier(
                 n_estimators=config.classical.n_estimators,
-                random_state=config.classical.random_state, 
+                random_state=config.classical.random_state,
                 eval_metric='logloss',
+                nthread=-1,
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "XGBoostChurnModel":

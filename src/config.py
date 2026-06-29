@@ -28,6 +28,7 @@ class QuantumConfig:
     step_size: float
     max_train_samples: int
     optimizer: str
+    max_kernel_samples: int
 
 @dataclass
 class PipelineConfig:
