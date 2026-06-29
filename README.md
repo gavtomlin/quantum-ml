@@ -1,4 +1,4 @@
-# quantum-ai: Churn Prediction with Classical and Quantum ML
+# quantum-ml: Churn Prediction with Classical and Quantum ML
 
 A churn prediction system trained on the Telco customer churn dataset, comparing classical ML models against a Variational Quantum Classifier (VQC). Built to explore whether quantum methods can offer practical value on a real tabular classification problem.
 
